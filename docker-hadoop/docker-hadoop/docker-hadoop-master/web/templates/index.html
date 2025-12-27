@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>大数据实时热点监控系统 - 词云版</title>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts-wordcloud@2.1.0/dist/echarts-wordcloud.min.js"></script>
+  <style>
+    :root { --primary: #1677ff; --bg: #f0f2f5; --card: #ffffff; }
+    body { font-family: "PingFang SC","Microsoft YaHei",sans-serif; background: var(--bg); margin: 0; padding: 20px; }
+    .container { max-width: 1400px; margin: 0 auto; }
+
+    .header {
+      background: var(--card);
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .header h1 { margin: 0; font-size: 24px; color: #1a1a1a; }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 1.3fr 0.7fr;
+      gap: 20px;
+    }
+
+    .card { background: var(--card); border-radius: 12px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); min-height: 500px; }
+    .chart-box { width: 100%; height: 450px; }
+
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; padding: 12px 8px; color: #888; border-bottom: 2px solid #f0f0f0; }
+    td { padding: 10px 8px; border-bottom: 1px solid #f5f5f5; font-size: 13px; }
+
+    .rank-tag { display: inline-block; width: 22px; height: 22px; line-height: 22px; text-align: center; border-radius: 4px; background: #eee; font-size: 11px; }
+    tr:nth-child(1) .rank-tag { background: #ff4d4f; color: #fff; }
+    tr:nth-child(2) .rank-tag { background: #ff7a45; color: #fff; }
+    tr:nth-child(3) .rank-tag { background: #ffc53d; color: #fff; }
+
+    .btn { padding: 10px 20px; border: 0; border-radius: 8px; cursor: pointer; background: var(--primary); color: #fff; font-weight: bold; }
+    .btn:hover { background: #40a9ff; }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <h1>微博热搜大数据监控看板</h1>
+        <div style="margin-top:5px; color:#888; font-size:13px;">数据源：微博实时热搜 | 计算层：Hadoop MapReduce分布式集群</div>
+      </div>
+      <div style="text-align: right;">
+        <button id="btn" class="btn">同步集群最新数据</button>
+        <div id="status" style="margin-top:8px; font-size:12px; color:#999;"></div>
+      </div>
+    </div>
+
+    <div class="main-grid">
+      <div class="card">
+        <div style="font-weight:bold; margin-bottom:15px; border-left:4px solid #722ed1; padding-left:10px;">热点词云可视化</div>
+        <div id="wordcloud-container" class="chart-box"></div>
+      </div>
+
+      <div class="card">
+        <div style="font-weight:bold; margin-bottom:15px; border-left:4px solid #1890ff; padding-left:10px;">频次统计分布</div>
+        <div id="bar-container" class="chart-box"></div>
+      </div>
+
+      <div class="card" style="min-height: auto;">
+        <div style="font-weight:bold; margin-bottom:15px; border-left:4px solid #52c41a; padding-left:10px;">TOP 20 榜单</div>
+        <table>
+          <thead>
+            <tr>
+              <th>排名</th>
+              <th>关键词</th>
+              <th>频次</th>
+            </tr>
+          </thead>
+          <tbody id="tbody">
+            {% for row in top20 %}
+            <tr>
+              <td><span class="rank-tag">{{ loop.index }}</span></td>
+              <td>{{ row.word }}</td>
+              <td style="color:var(--primary); font-weight:bold;">{{ row.count }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const barChart = echarts.init(document.getElementById('bar-container'));
+    const wordChart = echarts.init(document.getElementById('wordcloud-container'));
+
+    function updateVisuals(data) {
+      const barData = [...data].sort((a, b) => a.count - b.count);
+
+      barChart.setOption({
+        tooltip: { trigger: 'axis' },
+        grid: { left: '3%', right: '10%', bottom: '3%', containLabel: true },
+        xAxis: { type: 'value' },
+        yAxis: {
+          type: 'category',
+          data: barData.map(d => d.word),
+          axisLabel: { interval: 0, fontSize: 12 }
+        },
+        series: [{
+          name: '出现频次',
+          type: 'bar',
+          data: barData.map(d => d.count),
+          itemStyle: { color: '#1890ff', borderRadius: [0, 4, 4, 0] }
+        }]
+      });
+
+      wordChart.setOption({
+        series: [{
+          type: 'wordCloud',
+          shape: 'circle',
+          left: 'center', top: 'center', width: '90%', height: '90%',
+          sizeRange: [14, 50],
+          rotationRange: [-45, 90],
+          rotationStep: 45,
+          gridSize: 8,
+          drawOutOfBound: false,
+          textStyle: {
+            fontFamily: 'sans-serif',
+            fontWeight: 'bold',
+            color: function () {
+              return 'rgb(' + [
+                Math.round(Math.random() * 160),
+                Math.round(Math.random() * 160),
+                Math.round(Math.random() * 160)
+              ].join(',') + ')';
+            }
+          },
+          emphasis: { focus: 'self', textStyle: { textShadowBlur: 10, textShadowColor: '#333' } },
+          data: data.map(d => ({ name: d.word, value: d.count }))
+        }]
+      });
+    }
+
+    function renderTable(rows) {
+      document.getElementById('tbody').innerHTML = rows.map((r, i) => `
+        <tr>
+          <td><span class="rank-tag">${i + 1}</span></td>
+          <td>${r.word}</td>
+          <td style="color:var(--primary);font-weight:bold">${r.count}</td>
+        </tr>
+      `).join('');
+    }
+
+    document.getElementById('btn').addEventListener('click', async () => {
+      const btn = document.getElementById('btn');
+      btn.disabled = true;
+      const statusEl = document.getElementById('status');
+      statusEl.textContent = '集群正在重新计算...';
+
+      try {
+        const res = await fetch('/api/refresh', { method: 'POST' });
+        const data = await res.json();
+
+        if (!res.ok || !data.ok) {
+          const detail = String(data.detail || '');
+	  console.error("FULL DETAIL:\n" + detail);  // 关键：控制台完整输出
+	  statusEl.textContent = `刷新失败：${data.msg || '未知错误'} | ${detail.slice(0, 200)}`;
+          console.error(data);
+          return;
+        }
+
+        renderTable(data.top20);
+        updateVisuals(data.top20);
+        statusEl.textContent = `计算完成！${data.updated_at || ''}`;
+
+      } catch (e) {
+        statusEl.textContent = `请求异常：${e}`;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    const initialData = {{ top20|tojson }};
+    updateVisuals(initialData);
+
+    window.onresize = () => { barChart.resize(); wordChart.resize(); };
+  </script>
+</body>
+</html>
